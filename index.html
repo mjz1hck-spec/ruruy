@@ -59,4 +59,134 @@
 </head>
 <body>
 <nav>
-  
+  <span class="site-name" onclick="navigate('home')">儒儒</span>
+  <button class="write-link" onclick="navigate('write')">写手入口</button>
+</nav>
+<div id="page-home" class="page active">
+  <div class="list-wrap" id="article-list"></div>
+</div>
+<div id="page-article" class="page">
+  <div class="article-wrap">
+    <button class="back-btn" onclick="navigate('home')">← 返回</button>
+    <div class="article-header">
+      <h1 id="av-title"></h1>
+      <div class="meta"><span id="av-date"></span><span id="av-readtime"></span></div>
+    </div>
+    <div class="article-body" id="av-body"></div>
+  </div>
+</div>
+<div id="page-write" class="page">
+  <div class="write-wrap">
+    <div id="auth-gate">
+      <div class="auth-box">
+        <h3>写手入口</h3>
+        <p>请输入访问密码</p>
+        <div class="field">
+          <label>密码</label>
+          <input type="password" id="pw-input" placeholder="••••••" onkeydown="if(event.key==='Enter')doAuth()">
+        </div>
+        <div id="auth-error" class="error-msg" style="display:none">密码错误，请重试。</div>
+        <button class="btn btn-black" onclick="doAuth()" style="width:100%">进入</button>
+      </div>
+    </div>
+    <div id="write-panel" style="display:none">
+      <div style="display:flex;align-items:baseline;gap:1rem;margin-top:2.5rem">
+        <div class="panel-title" style="margin-top:0">发布文章</div>
+        <button class="logout-btn" onclick="doLogout()">退出</button>
+      </div>
+      <p class="panel-sub">填写内容后点击发布，立即可见。</p>
+      <div class="form-row">
+        <div class="field"><label>笔名 / 作者</label><input type="text" id="f-author" placeholder="你的笔名"></div>
+        <div class="field"><label>日期</label><input type="date" id="f-date"></div>
+      </div>
+      <div class="field"><label>文章标题</label><input type="text" id="f-title" placeholder="标题"></div>
+      <div class="field"><label>正文内容</label><textarea id="f-body" placeholder="在这里写下文章……&#10;&#10;空行会自动分段。"></textarea></div>
+      <div style="display:flex;gap:0.7rem">
+        <button class="btn btn-black" onclick="publishArticle()">发 布</button>
+        <button class="btn btn-outline" onclick="resetForm()">清 空</button>
+      </div>
+      <div class="post-list-admin">
+        <div class="admin-section-label">已发布</div>
+        <div id="admin-list"></div>
+      </div>
+      <div class="post-list-admin" style="margin-top:2rem">
+        <div class="admin-section-label">修改密码</div>
+        <div style="display:flex;flex-direction:column;gap:0.7rem;max-width:320px">
+          <div class="field" style="margin-bottom:0"><label>新密码</label><input type="password" id="pw-new" placeholder="输入新密码" style="margin-bottom:0"></div>
+          <div class="field" style="margin-bottom:0"><label>确认新密码</label><input type="password" id="pw-confirm" placeholder="再输入一次" style="margin-bottom:0"></div>
+          <div id="pw-change-error" class="error-msg" style="display:none"></div>
+          <button class="btn btn-outline" onclick="changePassword()" style="align-self:flex-start;margin-top:0.3rem">保存密码</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+<script>
+const DEFAULT_PASSWORD = 'ruiru2024';
+let articles = JSON.parse(localStorage.getItem('rr-articles') || '[]');
+let authed = false, editingId = null;
+function getPassword() { return localStorage.getItem('rr-password') || DEFAULT_PASSWORD; }
+function save() { localStorage.setItem('rr-articles', JSON.stringify(articles)); }
+function changePassword() {
+  const np = document.getElementById('pw-new').value;
+  const cp = document.getElementById('pw-confirm').value;
+  const e = document.getElementById('pw-change-error');
+  e.style.display = 'none';
+  if (!np) { e.textContent='请输入新密码'; e.style.display='block'; return; }
+  if (np.length < 4) { e.textContent='密码至少4位'; e.style.display='block'; return; }
+  if (np !== cp) { e.textContent='两次输入不一致'; e.style.display='block'; return; }
+  localStorage.setItem('rr-password', np);
+  document.getElementById('pw-new').value = '';
+  document.getElementById('pw-confirm').value = '';
+  showToast('密码已更新');
+}
+function readTime(text) { return Math.max(1, Math.round(text.replace(/\s+/g,' ').length / 300)) + ' min read'; }
+function navigate(page, id) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  if (page === 'home') { document.getElementById('page-home').classList.add('active'); renderList(); }
+  else if (page === 'article') {
+    const a = articles.find(x => x.id === id);
+    if (!a) return navigate('home');
+    document.getElementById('av-title').textContent = a.title;
+    document.getElementById('av-date').textContent = a.date;
+    document.getElementById('av-readtime').textContent = readTime(a.body);
+    document.getElementById('av-body').innerHTML = a.body.split(/\n\s*\n/).map(p => `<p>${p.replace(/\n/g,'<br>')}</p>`).join('');
+    document.getElementById('page-article').classList.add('active');
+    window.scrollTo(0,0);
+  } else if (page === 'write') { document.getElementById('page-write').classList.add('active'); authed ? showPanel() : showAuth(); }
+}
+function renderList() {
+  const el = document.getElementById('article-list');
+  const sorted = [...articles].sort((a,b) => new Date(b.date)-new Date(a.date));
+  if (!sorted.length) { el.innerHTML = '<div class="empty-state">暂无文章</div>'; return; }
+  el.innerHTML = sorted.map(a => `<div class="article-entry" onclick="navigate('article','${a.id}')"><div class="entry-title">${esc(a.title)}</div><div class="entry-meta"><span>${esc(a.date)}</span><span>${readTime(a.body)}</span></div></div>`).join('');
+}
+function renderAdminList() {
+  const el = document.getElementById('admin-list');
+  const sorted = [...articles].sort((a,b) => new Date(b.date)-new Date(a.date));
+  if (!sorted.length) { el.innerHTML = '<p style="font-size:0.82rem;color:#bbb">尚无文章。</p>'; return; }
+  el.innerHTML = sorted.map(a => `<div class="admin-row"><div><div class="ptitle">${esc(a.title)}</div><div class="pmeta">${esc(a.date)}</div></div><div class="admin-actions"><button class="btn btn-outline btn-sm" onclick="editArticle('${a.id}')">编辑</button><button class="btn btn-red btn-sm" onclick="deleteArticle('${a.id}')">删除</button></div></div>`).join('');
+}
+function showAuth() { document.getElementById('auth-gate').style.display='block'; document.getElementById('write-panel').style.display='none'; document.getElementById('auth-error').style.display='none'; document.getElementById('pw-input').value=''; }
+function showPanel() { document.getElementById('auth-gate').style.display='none'; document.getElementById('write-panel').style.display='block'; if (!document.getElementById('f-date').value) document.getElementById('f-date').value=new Date().toISOString().slice(0,10); renderAdminList(); }
+function doAuth() { if (document.getElementById('pw-input').value===getPassword()) { authed=true; showPanel(); } else { document.getElementById('auth-error').style.display='block'; document.getElementById('pw-input').value=''; } }
+function doLogout() { authed=false; editingId=null; showAuth(); }
+function publishArticle() {
+  const author=document.getElementById('f-author').value.trim(), date=document.getElementById('f-date').value.trim(), title=document.getElementById('f-title').value.trim(), body=document.getElementById('f-body').value.trim();
+  if (!title||!body) { showToast('请填写标题和正文'); return; }
+  if (!date) { showToast('请选择日期'); return; }
+  if (editingId) { const i=articles.findIndex(a=>a.id===editingId); if(i>-1) articles[i]={...articles[i],author,date,title,body}; editingId=null; showToast('已更新'); }
+  else { const id=Date.now().toString(36)+Math.random().toString(36).slice(2,5); articles.unshift({id,author,date,title,body}); showToast('已发布'); }
+  save(); resetForm(); renderAdminList();
+}
+function editArticle(id) { const a=articles.find(x=>x.id===id); if(!a) return; editingId=id; document.getElementById('f-author').value=a.author; document.getElementById('f-date').value=a.date; document.getElementById('f-title').value=a.title; document.getElementById('f-body').value=a.body; window.scrollTo(0,0); }
+function deleteArticle(id) { if(!confirm('确认删除？')) return; articles=articles.filter(a=>a.id!==id); save(); renderAdminList(); showToast('已删除'); }
+function resetForm() { editingId=null; ['f-author','f-title','f-body'].forEach(id=>document.getElementById(id).value=''); document.getElementById('f-date').value=new Date().toISOString().slice(0,10); }
+function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+let toastT;
+function showToast(msg) { const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show'); clearTimeout(toastT); toastT=setTimeout(()=>t.classList.remove('show'),2000); }
+renderList();
+</script>
+</body>
+</html>
